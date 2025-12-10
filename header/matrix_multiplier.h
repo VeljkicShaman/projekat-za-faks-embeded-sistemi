@@ -1,9 +1,9 @@
-#include <systemc.h>
-#include <vector>
-#include <iostream>
+#ifndef MATRIX_MULTIPLIER_H
+#define MATRIX_MULTIPLIER_H
 
-using Matrix = std::vector<std::vector<double>>;
-using Vector = std::vector<double>;
+#include <systemc.h>
+#include <iostream> 
+#include "datatypes.h"
 
 SC_MODULE(MatrixMultiplier) {
     sc_in<bool> clk;
@@ -18,44 +18,43 @@ SC_MODULE(MatrixMultiplier) {
     void multiply_process() {
         done.write(false);
         while (true) {
+            //cekamo start signal
             do { wait(clk->posedge_event()); } while (start.read() == false);
-
-            std::cout << "@" << sc_time_stamp() << "Krećem množenje..." << std::endl;
-            
-            if (!X_ptr || !W_ptr || !Y_ptr) {
-                std::cerr << "IO podaci nisu postavljeni!" << std::endl;
-                sc_stop(); return;
-            }
 
             const Matrix& X = *X_ptr;
             const Matrix& W = *W_ptr;
             Matrix& Y = *Y_ptr;
-
+            
             size_t seq_len = X.size();
             size_t in_feat = X[0].size();
             size_t out_feat = W.size();
-
+            
+            //logika
             for (size_t i = 0; i < seq_len; ++i) {
                 for (size_t j = 0; j < out_feat; ++j) {
-                    double sum = 0.0;
+                    ACC_T sum = 0.0; //32-bitni akumulator
+                    
+                    //Najzahtevniji deo (MAC operacije)
                     for (size_t k = 0; k < in_feat; ++k) {
                         sum += X[i][k] * W[j][k];
                     }
-                    if (b_ptr) { Y[i][j] = sum + b_ptr->at(j); } 
-                    else { Y[i][j] = sum; }
-                    wait(clk->posedge_event()); 
+                    
+                    //Upis rezultata (sa ili bez biasa)
+                    if (b_ptr) { 
+                        Y[i][j] = sum + b_ptr->at(j); 
+                    } else { 
+                        Y[i][j] = sum; 
+                    }
                 }
             }
-            
-            std::cout << "@" << sc_time_stamp() << "Množenje završeno." << std::endl;
-            done.write(true);
 
-            do {
-                wait(clk->posedge_event());
-            } while (start.read() == true);
             
+            //signaliziramo kraj
+            done.write(true);
+            
+
+            while (start.read() == true) { wait(clk->posedge_event()); }
             done.write(false);
-            std::cout << "@" << sc_time_stamp() << "Reset i ceka se novi zadatak" << std::endl;
         }
     }
 
@@ -63,3 +62,5 @@ SC_MODULE(MatrixMultiplier) {
         SC_THREAD(multiply_process);
     }
 };
+
+#endif // MATRIX_MULTIPLIER_H
